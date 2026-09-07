@@ -259,6 +259,34 @@ Resources:
     Properties:
       LogGroupName: !Sub "/aws/events/mp-saas-license-${AWS::StackName}"
 
+  # Allows EventBridge to deliver events to the CloudWatch Logs target above.
+  # CloudWatch Logs targets are authorized via a log-group resource policy
+  # (not the rule's RoleArn), so this is required for the LogsTarget to work.
+  LicenseEventsLogGroupResourcePolicy:
+    Type: AWS::Logs::ResourcePolicy
+    Properties:
+      PolicyName: !Sub "${AWS::StackName}-EventBridgeToCWLogs"
+      PolicyDocument: !Sub |
+        {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "EventBridgeToCWLogs",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": ["events.amazonaws.com", "delivery.logs.amazonaws.com"]
+              },
+              "Action": ["logs:CreateLogStream", "logs:PutLogEvents"],
+              "Resource": "${LicenseEventsLogGroup.Arn}",
+              "Condition": {
+                "ArnEquals": {
+                  "aws:SourceArn": "arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:rule/${MarketplaceSellerLicense}"
+                }
+              }
+            }
+          ]
+        }
+
   MarketplaceSellerLicense:
     Type: AWS::Events::Rule
     Properties:
@@ -779,13 +807,13 @@ Resources:
           // Web request
           const sendRequest = async function(url, opt) {
             opt = opt ? opt : {};
-            const parsedUrl = require("url").parse(url);
+            const parsedUrl = new URL(url);
             let headers = opt.headers ? opt.headers : {};
             headers["Content-length"] = opt.body ? opt.body.length : 0;
             const options = {
               hostname: parsedUrl.hostname,
               port: opt.port ? opt.port : (parsedUrl.protocol == "https:" ? 443 : 80),
-              path: parsedUrl.path,
+              path: parsedUrl.pathname + parsedUrl.search,
               method: opt.method ? opt.method : "GET",
               headers: headers
             };
